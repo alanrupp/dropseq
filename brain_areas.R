@@ -1,8 +1,6 @@
 library(tidyverse)
 library(Seurat)
 
-load("VMH_Drop-seq_neurons.Rdata")
-
 grab_areas <- function(areas = NULL) {
   # bring in all available areas
   all_areas <- list.files(path = "~/Desktop/Allen_Institute", 
