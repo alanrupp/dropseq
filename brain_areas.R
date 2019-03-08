@@ -21,18 +21,19 @@ grab_areas <- function(areas = NULL, contrast = "HY") {
 }
 
 # from selected areas, grab enrichment scores
-grab_area_enrichment <- function(areas, contrast = "HY") {
-  map(areas, ~read_csv(paste0("~/Desktop/dropseq/Allen_Institute/", 
-                              contrast, "/", .x, ".csv")))
+grab_area_enrichment <- function(area, contrast = "HY") {
+  read_csv(paste0("~/Desktop/dropseq/Allen_Institute/", 
+                  contrast, "/", area, ".csv"),
+           progress = FALSE, col_types = cols())
 }
 
 
 # get average scaled difference for all genes within cluster
-enrichment_score <- function(object, cluster, areas = NULL) {
+enrichment_score <- function(object, cluster, area = NULL) {
 
   # grab area enrichment scores
-  available_areas <- grab_areas(areas)
-  enrichment <- grab_area_enrichment(available_areas)[[1]]
+  area <- grab_areas(area)
+  enrichment <- grab_area_enrichment(area)
   
   genes <- unique(enrichment$"gene-symbol")
   genes <- genes[genes %in% rownames(object@scale.data)]
@@ -63,7 +64,7 @@ full_scores <- function(object, clusters = NULL, areas) {
     clusters = unique(object@ident)
     clusters = sort(clusters)
   }
-  result <- map(clusters, ~ score_multiple(neurons, .x))
+  result <- map(clusters, ~ score_multiple(neurons, .x, areas))
   result <- map(1:length(result), ~ mutate(result[[.x]], "cluster" = clusters[.x]))
   return(result)
 }
@@ -92,8 +93,6 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scores,
                          scale_clip_low = -3, scale_clip_high = 3) {
   if (is.null(genes)) {
     genes <- object@var.genes
-  } else {
-    genes <- genes
   }
   if (is.null(cells)) {
     cells <- sample(colnames(object@data), 1000)
@@ -105,7 +104,7 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scores,
     cell_names <- cell_names[cell_names %in% cells]
   }
   
-  # find 
+  # find mean scaled expression for genes by clusters
   mean_scale_data <-
     map(unique(object@ident),
         ~ rowMeans(object@scale.data[genes, cells_use(object, .x)])
@@ -115,22 +114,24 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scores,
   
   # clip data with big outliers -----------------------------------------------
   mean_scale_data <- apply(mean_scale_data, c(1,2),
-                           function(x) ifelse(x > scale_clip_high, scale_clip_high, x))
+                           function(x) ifelse(x > scale_clip_high, 
+                                              scale_clip_high, x))
   mean_scale_data <- apply(mean_scale_data, c(1,2),
-                           function(x) ifelse(x < scale_clip_low, scale_clip_low, x))
+                           function(x) ifelse(x < scale_clip_low, 
+                                              scale_clip_low, x))
   
-  # cluster using euclidean distance
-  distances <- dist(t(mean_scale_data))
-  clusters <- hclust(distances)
-  cluster_order <- clusters$label[clusters$order]
+  # cluster using euclidean distance -----------------------------------------
+  cluster_distances <- dist(t(mean_scale_data))
+  cluster_clusters <- hclust(cluster_distances)
+  cluster_order <- cluster_clusters$labels[cluster_clusters$order]
   
   gene_distances <- dist(mean_scale_data)
   gene_clusters <- hclust(gene_distances)
-  gene_order <- gene_clusters$label[gene_clusters$order]
+  gene_order <- gene_clusters$labels[gene_clusters$order]
 
   # make dendrogram
   dendro <- 
-    ggdendro::ggdendrogram(clusters, rotate = TRUE) +
+    ggdendro::ggdendrogram(cluster_clusters, rotate = TRUE) +
     theme_void()
   
   # make heatmap
@@ -151,15 +152,18 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scores,
   score_plot <-
     scores %>%
     group_by(cluster) %>%
+    mutate("rank" = seq(n())) %>%
+    slice(1:3) %>%
     ungroup() %>%
     complete(cluster) %>%
     mutate(cluster = factor(cluster, levels = cluster_order)) %>%
-    ggplot(aes(x = area, y = cluster, fill = score)) +
-    geom_tile(show.legend = FALSE) +
-    scale_fill_gradient2(low = "#A50026", mid = "#FFFFBF", high = "#313695") +
-    theme_void()
+    ggplot(aes(x = rank, y = cluster, size = score, label = area)) +
+    geom_text(show.legend = FALSE, hjust = "inward") +
+    scale_x_reverse() +
+    theme_void() +
+    theme(plot.margin = unit(c(0,1,0,1), "lines"))
 
   cowplot::plot_grid(score_plot, tiles, dendro, 
                      ncol = 3,
-                     rel_widths = c(0.4, 0.4, 0.2))
+                     rel_widths = c(0.3, 0.6, 0.1))
 }
