@@ -1,12 +1,12 @@
 library(tidyverse)
 library(Seurat)
 
-grab_areas <- function(areas = NULL) {
+grab_areas <- function(areas = NULL, contrast = "HY") {
   # bring in all available areas
-  all_areas <- list.files(path = "~/Desktop/Allen_Institute", 
+  all_areas <- list.files(path = paste0("~/Desktop/dropseq/Allen_Institute/", contrast), 
                           pattern = "*.csv",
                           full.names = TRUE)
-  area_names <- str_extract(all_areas, "[A-Za-z]+(?=_v_)")
+  area_names <- str_extract(all_areas, "[A-Za-z]+(?=\\.csv)")
   
   if (is.null(areas)) {
     areas <- area_names
@@ -21,8 +21,9 @@ grab_areas <- function(areas = NULL) {
 }
 
 # from selected areas, grab enrichment scores
-grab_area_enrichment <- function(areas) {
-  map(areas, ~read_csv(paste0("~/Desktop/Allen_Institute/", .x, "_v_HY.csv")))
+grab_area_enrichment <- function(areas, contrast = "HY") {
+  map(areas, ~read_csv(paste0("~/Desktop/dropseq/Allen_Institute/", 
+                              contrast, "/", .x, ".csv")))
 }
 
 
@@ -91,17 +92,20 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scores,
                          scale_clip_low = -3, scale_clip_high = 3) {
   if (is.null(genes)) {
     genes <- object@var.genes
+  } else {
+    genes <- genes
   }
   if (is.null(cells)) {
     cells <- sample(colnames(object@data), 1000)
   }
   
-  # calculate mean z-score by gene and cluster
+  # calculate mean z-score by gene and cluster --------------------------------
   cells_use <- function(object, cluster) {
     cell_names <- names(object@ident)[object@ident == cluster]
     cell_names <- cell_names[cell_names %in% cells]
   }
   
+  # find 
   mean_scale_data <-
     map(unique(object@ident),
         ~ rowMeans(object@scale.data[genes, cells_use(object, .x)])
@@ -109,7 +113,7 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scores,
     as.data.frame() %>%
     set_names(unique(object@ident))
   
-  # clip data with big outliers
+  # clip data with big outliers -----------------------------------------------
   mean_scale_data <- apply(mean_scale_data, c(1,2),
                            function(x) ifelse(x > scale_clip_high, scale_clip_high, x))
   mean_scale_data <- apply(mean_scale_data, c(1,2),
@@ -118,9 +122,13 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scores,
   # cluster using euclidean distance
   distances <- dist(t(mean_scale_data))
   clusters <- hclust(distances)
-  
   cluster_order <- clusters$label[clusters$order]
+  
+  gene_distances <- dist(mean_scale_data)
+  gene_clusters <- hclust(gene_distances)
+  gene_order <- gene_clusters$label[gene_clusters$order]
 
+  # make dendrogram
   dendro <- 
     ggdendro::ggdendrogram(clusters, rotate = TRUE) +
     theme_void()
@@ -132,39 +140,26 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scores,
     rownames_to_column("gene") %>%
     gather(-gene, key = "cluster", value = "expr") %>%
     mutate(cluster = factor(cluster, levels = cluster_order)) %>%
+    mutate(gene = factor(gene, levels = gene_order)) %>%
     ggplot(aes(x = gene, y = cluster, fill = expr)) +
     geom_tile(show.legend = FALSE) +
-    scale_fill_distiller(palette = "RdYlBu", direction = 1) +
+    scale_fill_gradient2(low = "#A50026", mid = "#FFFFBF", high = "#313695") +
     theme_void() +
     theme(axis.text.y = element_text())
   
   # add score plot
   score_plot <-
     scores %>%
-    filter(score > 0) %>%
     group_by(cluster) %>%
-    mutate(position = seq(1:n())) %>%
     ungroup() %>%
     complete(cluster) %>%
     mutate(cluster = factor(cluster, levels = cluster_order)) %>%
-    ggplot(aes(x = position, y = cluster, size = score, label = area)) +
-    geom_text(show.legend = FALSE) +
-    scale_x_reverse() +
+    ggplot(aes(x = area, y = cluster, fill = score)) +
+    geom_tile(show.legend = FALSE) +
+    scale_fill_gradient2(low = "#A50026", mid = "#FFFFBF", high = "#313695") +
     theme_void()
 
   cowplot::plot_grid(score_plot, tiles, dendro, 
                      ncol = 3,
                      rel_widths = c(0.4, 0.4, 0.2))
 }
-
-# - Run program -------------------------------------------------------------
-results <- full_scores(neurons)
-scores_summary <- summarize_scores(results)
-
-ggsave("~/Desktop/VMH.png", 
-       heatmap_plot(neurons, 
-             genes = filter(markers, p_val_adj < 0.05 & !duplicated(gene))$gene, 
-             scores = scores_summary, 
-             scale_clip_low = -2, 
-             scale_clip_high = 2), 
-       width = 9, height = 5, units = "in", dpi = 300)
