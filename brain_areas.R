@@ -64,7 +64,7 @@ full_scores <- function(object, clusters = NULL, areas) {
     clusters = unique(object@ident)
     clusters = sort(clusters)
   }
-  result <- map(clusters, ~ score_multiple(neurons, .x, areas))
+  result <- map(clusters, ~ score_multiple(object, .x, areas))
   result <- map(1:length(result), ~ mutate(result[[.x]], "cluster" = clusters[.x]))
   return(result)
 }
