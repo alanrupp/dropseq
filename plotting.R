@@ -1,3 +1,5 @@
+
+
 treatment_violin <- function(object, cluster, genes, tx1, tx2,
                              jitter = TRUE) {
   # check that genes are in object
@@ -48,3 +50,47 @@ treatment_violin <- function(object, cluster, genes, tx1, tx2,
   
   plt
 }
+
+# - Column plot of mean gene expression ---------------------------------------
+column_plot <- function(object, genes, clusters = NULL) {
+  if (is.null(clusters)) {
+    clusters <- levels(object@ident)
+  }
+  
+  genes <- genes[genes %in% rownames(object@data)]
+  
+  # grab data
+  if (length(genes) == 0) {
+    return(NULL)
+  } else if (length(genes) == 1) {
+    df <- object@data[genes, ] %>% as.data.frame() %>% set_names(genes) %>% t()
+  } else {
+    df <- object@data[genes, ] %>% as.matrix() %>% as.data.frame()
+  }
+  
+  # make tidy
+  df <- df %>%
+    rownames_to_column("gene") %>%
+    gather(-gene, key = "barcode", value = "counts")
+  
+  # add cluster info
+  df <- left_join(df, data.frame("barcode" = names(object@ident),
+                                 "cluster" = object@ident), by = "barcode")
+  # plot
+  plt <- 
+    df %>%
+    group_by(gene, cluster) %>%
+    summarize(mean = mean(counts)) %>%
+    ggplot(aes(x = cluster, y = mean, fill = cluster)) +
+    geom_col(show.legend = FALSE) +
+    scale_y_continuous(expand = c(0, 0)) +
+    labs(y = "Mean expression", x = element_blank()) +
+    theme_bw() +
+    theme(panel.grid = element_blank())
+  
+  if (length(genes) > 1) {
+    plt <- plt + facet_wrap(~gene, scales = "free_y")
+  }
+  return(plt)
+}
+
