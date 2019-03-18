@@ -22,13 +22,13 @@ dedup_genes <- function(mtx) {
   )
   
   # arrange by decreasing expression
-  genes <- genes %>% 
+  genes_to_keep <- genes %>% 
     arrange(desc(sum)) %>%
     filter(!duplicated(name)) %>%
     .$position
   
   # keep only positions left in genes df
-  cat(paste(length(genes), "genes removed"))
+  cat(paste(length(genes) - length(genes_to_keep), "genes removed"))
   mtx2 <- mtx[genes, ]
   return(mtx2)
 }
