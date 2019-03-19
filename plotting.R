@@ -1,3 +1,167 @@
+# - Summarize data ------------------------------------------------------------
+summarize_data <- function(object, genes, clusters = NULL) {
+  if (is.null(clusters)) {
+    clusters <- unique(object@ident)
+  } else {
+    clusters <- clusters[clusters %in% object@ident]
+  }
+  
+  genes <- genes[genes %in% rownames(object@data)]
+  
+  # grab data
+  if (length(genes) == 0) {
+    return(NULL)
+  } else if (length(genes) == 1) {
+    df <- object@data[genes, ] %>% as.data.frame() %>% t() %>% as.data.frame()
+    rownames(df) <- genes
+  } else {
+    df <- object@data[genes, ] %>% as.matrix() %>% as.data.frame()
+  }
+  
+  # make tidy
+  df <- df %>%
+    rownames_to_column("gene") %>%
+    gather(-gene, key = "barcode", value = "counts")
+  
+  # add cluster info
+  df <- left_join(df, data.frame("barcode" = names(object@ident),
+                                 "cluster" = object@ident), by = "barcode")
+  
+  # summarize
+  df <- df %>%
+    group_by(gene, cluster) %>%
+    summarize(counts = mean(counts))
+  
+  return(df)
+}
+
+
+# - Heatmap plot --------------------------------------------------------------
+cluster_order <- function(object, cells = NULL, genes = NULL, scale = TRUE,
+                          col_names = FALSE, row_names = FALSE, 
+                          heatmap_legend = FALSE) {
+  if (is.null(cells)) {
+    cells <- colnames(object@data)
+  }
+  if (is.null(genes)) {
+    genes <- rownames(object@data)
+  } 
+  
+  cells <- cells[cells %in% colnames(object@data)]
+  genes <- genes[genes %in% rownames(object@data)]
+  
+  if (scale == TRUE) {
+    matrix <- object@scale.data[genes, ]
+  } else {
+    matrix <- object@data[genes, ]
+  }
+  
+  # functions to grab cells and calculate mean expression
+  mean_expression <- function(matrix, cells) {
+    rowMeans(matrix[, cells])
+  }
+  cells_use <- function(object, ident) {
+    names(object@ident)[object@ident == ident]
+  }
+  
+  # calculate mean expression by cluster
+  mean_values <-
+    map(unique(object@ident),
+        ~mean_expression(matrix, cells = cells_use(object, .x))) %>%
+    as.data.frame() %>%
+    set_names(unique(object@ident)) %>%
+    t()
+  
+  # auto clip high and low to center at 0
+  auto_clip <- function(mtx) {
+    values <- as.matrix(mtx)
+    if (abs(min(values)) < max(values)) {
+      clip <- abs(min(values))
+      mtx <- apply(mtx, c(1,2), function(x) ifelse(x > clip, clip, x))
+    } else if (abs(min(values)) < max(values)) {
+      clip <- max(values)
+      mtx <- apply(mtx, c(1,2), function(x) ifelse(x < -clip, -clip, x))
+    }
+    return(mtx)
+  }
+  
+  if (scale == TRUE) {
+    mean_values <- auto_clip(mean_values)
+  }
+  
+  dists <- dist(mean_values)
+  clusts <- hclust(dists)
+  
+  return(clusts$labels[clusts$order])
+}
+
+
+
+heatmap_plot <- function(object, cells = NULL, genes = NULL, scale = TRUE,
+                         col_names = FALSE, row_names = FALSE, 
+                         heatmap_legend = FALSE) {
+  
+  if (is.null(cells)) {
+    cells <- colnames(object@data)
+  }
+  if (is.null(genes)) {
+    genes <- rownames(object@data)
+  } 
+  
+  cells <- cells[cells %in% colnames(object@data)]
+  genes <- genes[genes %in% rownames(object@data)]
+  
+  if (scale == TRUE) {
+    matrix <- object@scale.data[genes, ]
+    color_pal <- RColorBrewer::brewer.pal("div", "RdYlBu")
+  } else {
+    matrix <- object@data[genes, ]
+    color_pal <- RColorBrewer::brewer.pal("seq", "YlGnBu")
+  }
+  
+  # functions to grab cells and calculate mean expression
+  mean_expression <- function(matrix, cells) {
+    rowMeans(matrix[, cells])
+  }
+  cells_use <- function(object, ident) {
+    names(object@ident)[object@ident == ident]
+  }
+  
+  # calculate mean expression by cluster
+  mean_values <-
+    map(unique(object@ident),
+        ~mean_expression(matrix, cells = cells_use(object, .x))) %>%
+    as.data.frame() %>%
+    set_names(unique(object@ident)) %>%
+    t()
+  
+  # auto clip high and low to center at 0
+  auto_clip <- function(mtx) {
+    values <- as.matrix(mtx)
+    if (abs(min(values)) < max(values)) {
+      clip <- abs(min(values))
+      mtx <- apply(mtx, c(1,2), function(x) ifelse(x > clip, clip, x))
+    } else if (abs(min(values)) < max(values)) {
+      clip <- max(values)
+      mtx <- apply(mtx, c(1,2), function(x) ifelse(x < -clip, -clip, x))
+    }
+    return(mtx)
+  }
+  
+  if (scale == TRUE) {
+    mean_values <- auto_clip(mean_values)
+  }
+  
+  # plot
+  plt <-
+    pheatmap::pheatmap(mean_values, 
+                       show_colnames = col_names,
+                       treeheight_col = 0,
+                       legend = heatmap_legend,
+                       color = color_pal)
+  return(plt)
+}
+
 
 # - Violin with treatment -----------------------------------------------------
 violin_plot <- function(object, clusters = NULL, genes, tx = NULL,
@@ -60,36 +224,13 @@ violin_plot <- function(object, clusters = NULL, genes, tx = NULL,
 }
 
 # - Column plot of mean gene expression ---------------------------------------
-column_plot <- function(object, genes, clusters = NULL) {
-  if (is.null(clusters)) {
-    clusters <- levels(object@ident)
-  }
+column_plot <- function(object, genes, clusters = NULL, 
+                        reorder_clusters = FALSE) {
+  df <- summarize_data(object, genes, clusters)
   
-  genes <- genes[genes %in% rownames(object@data)]
-  
-  # grab data
-  if (length(genes) == 0) {
-    return(NULL)
-  } else if (length(genes) == 1) {
-    df <- object@data[genes, ] %>% as.data.frame() %>% set_names(genes) %>% t()
-  } else {
-    df <- object@data[genes, ] %>% as.matrix() %>% as.data.frame()
-  }
-  
-  # make tidy
-  df <- df %>%
-    rownames_to_column("gene") %>%
-    gather(-gene, key = "barcode", value = "counts")
-  
-  # add cluster info
-  df <- left_join(df, data.frame("barcode" = names(object@ident),
-                                 "cluster" = object@ident), by = "barcode")
   # plot
   plt <- 
-    df %>%
-    group_by(gene, cluster) %>%
-    summarize(mean = mean(counts)) %>%
-    ggplot(aes(x = cluster, y = mean, fill = cluster)) +
+    ggplot(df, aes(x = cluster, y = counts, fill = cluster)) +
     geom_col(show.legend = FALSE) +
     scale_y_continuous(expand = c(0, 0)) +
     labs(y = "Mean expression", x = element_blank()) +
@@ -133,7 +274,8 @@ proportion_plot <- function(object, genes, clusters = NULL) {
 
 # - UMAP plot ----------------------------------------------------------------
 umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL, 
-                      legend = FALSE, cluster_label = FALSE) {
+                      legend = FALSE, cluster_label = FALSE,
+                      ncol = NULL) {
   # pull UMAP data
   umap <- data.frame(
     UMAP1 = object@dr$umap@cell.embeddings[, 1],
@@ -168,7 +310,7 @@ umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL,
     scale_color_gradient(low = "gray90", high = "navyblue") +
     theme_bw() +
     theme(panel.grid = element_blank()) +
-    facet_wrap(~gene)
+    facet_wrap(~gene, ncol = ncol)
   if (cluster_label == TRUE) {
     cluster_center <- bind_cols(umap, data.frame("cluster" = object@ident))
     cluster_center <- cluster_center %>%
@@ -179,5 +321,99 @@ umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL,
   return(plt)
 }
 
+# - Dot plot ------------------------------------------------------------------
+dot_plot <- function(object, genes, clusters = NULL) {
+  df <- summarize_data(object, genes, clusters)
+  
+  # plot
+  plt <- 
+    ggplot(df, aes(x = gene, y = fct_rev(cluster), size = counts)) +
+    geom_point(show.legend = FALSE, color = "steelblue") +
+    scale_x_discrete(position = "top") +
+    scale_radius(limits = c(0.01, NA)) +
+    theme_void() +
+    theme(axis.text.x = element_text(color = "black", angle = 89, vjust = 1,
+                                     hjust = 1))
+  
+  return(plt)
+}
+
 
 # - Correlation plot ---------------------------------------------------------
+correlation_plot <- function(object, genes, clusters = NULL, 
+                             view_by_cluster = FALSE,
+                             fit_line = FALSE) {
+  if (length(genes) != 2) {
+    cat("Please specify exactly 2 genes")
+    return(NULL)
+  }
+  
+  if (is.null(clusters)) {
+    clusters <- sort(unique(object@ident))
+  } else {
+    clusters <- clusters[clusters %in% object@ident]
+  }
+  
+  cluster_df <- data.frame("barcode" = names(object@ident),
+                           "Cluster" = object@ident) %>%
+    filter(Cluster %in% clusters)
+  
+  df <- object@data[genes, ] %>% as.matrix() %>% t() %>% as.data.frame() %>%
+    rownames_to_column("barcode")
+  
+  # add cluster ids
+  df <- inner_join(df, cluster_df, by = "barcode") %>% select(-barcode)
+  
+  #return(select(df, !!genes[1]))
+  
+  # plot
+  plt <- ggplot(df, aes(x = !!sym(genes[1]), y = !!sym(genes[2]))) +
+    geom_point(aes(color = Cluster)) +
+    scale_x_continuous(expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0, 0)) +
+    theme_bw() +
+    theme(panel.grid = element_blank())
+  if (fit_line == TRUE) {
+    plt <- plt +  geom_smooth(method = "lm", se = FALSE, 
+                              linetype = "dashed", color = "gray")
+  }
+  if (view_by_cluster == TRUE) {
+    plt <- plt + facet_wrap(~Cluster)
+  }
+  return(plt)
+}
+
+
+# - Coexpression plot --------------------------------------------------------
+coexpression_plot <- function(object, genes, clusters = NULL, title = TRUE) {
+  if (is.null(clusters)) {
+    clusters <- unique(object@ident)
+  } else {
+    clusters <- clusters[clusters %in% object@ident]
+  }
+  
+  get_table <- function(object, genes) {
+    table(object@ident, 
+          object@data[genes[1],] > 0 & object@data[genes[2],] > 0) %>%
+      as.data.frame()
+  }
+  
+  df <- get_table(object, genes) %>%
+    group_by(Var1) %>%
+    summarize("Proportion" = Freq[Var2 == TRUE] / sum(Freq))
+  
+  plt <- ggplot(df, aes(x = Var1, y = "Coexpression", fill = Proportion)) +
+    geom_tile() +
+    scale_fill_viridis_c() + 
+    labs(x = "Cluster", y = element_blank()) +
+    scale_x_discrete(expand = c(0, 0)) +
+    scale_y_discrete(expand = c(0, 0)) +
+    theme_bw() +
+    theme(axis.text.y = element_blank(),
+          axis.ticks.y = element_blank())
+  
+  if (title == TRUE) {
+    plt <- plt + ggtitle(paste("Coexpression of", genes[1], "and", genes[2]))
+  }
+  return(plt)
+}
