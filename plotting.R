@@ -1,19 +1,27 @@
 
-
-treatment_violin <- function(object, cluster, genes, tx1, tx2,
-                             jitter = TRUE) {
-  # check that genes are in object
-  genes <- genes[genes %in% rownames(object@data)]
-  
-  # grab cells by treatment
-  grab_cells <- function(cluster, tx) {
-    intersect(
-      names(arc@ident)[arc@ident == cluster], 
-      rownames(arc@meta.data)[arc@meta.data$treatment == tx]
-    )
+# - Violin with treatment -----------------------------------------------------
+violin_plot <- function(object, clusters = NULL, genes, tx = NULL,
+                        jitter = TRUE) {
+  if (is.null(clusters)) {
+    clusters <- sort(unique(object@ident))
   }
-  cells1 <- grab_cells(cluster, tx1)
-  cells2 <- grab_cells(cluster, tx2)
+  
+  # check that genes & clusters are in object
+  genes <- genes[genes %in% rownames(object@data)]
+  clusters <- clusters[clusters %in% object@ident]
+  
+  # function to grab cells by treatment
+  grab_cells <- function(clusters, tx = NULL) {
+    by_cluster <- names(arc@ident)[arc@ident %in% clusters]
+    if (!is.null(tx)) {
+      by_tx <- rownames(object@meta.data)[object@meta.data$treatment %in% tx]
+      by_cluster <- intersect(by_cluster, by_tx)
+    }
+    return(by_cluster)
+  }
+  
+  cells1 <- grab_cells(clusters, tx[1])
+  cells2 <- grab_cells(clusters, tx[1])
   
   # grab data using input cells
   if (length(genes) == 1) {
@@ -94,3 +102,33 @@ column_plot <- function(object, genes, clusters = NULL) {
   return(plt)
 }
 
+# - Proportion plot -----------------------------------------------------------
+proportion_plot <- function(object, genes, clusters = NULL) {
+  if (is.null(clusters)) {
+    clusters <- sort(unique(object@ident))
+  }
+  
+  get_table <- function(gene) {
+    table(object@ident, object@data[gene, ] > 0) %>%
+      as.data.frame() %>%
+      mutate("Gene" = gene)
+  }
+  
+  df <- map(genes, ~get_table(.x)) %>% bind_rows()
+  
+  plt <-
+    ggplot(df, aes(x = Var1, y = Freq, fill = Var2)) + 
+    geom_col(show.legend = FALSE) + 
+    scale_fill_manual(values = c('gray', 'red')) +
+    scale_y_continuous(expand = c(0, 0)) +
+    labs(x = "Cluster", y = "Cells") +
+    theme_bw() +
+    theme(panel.grid = element_blank())
+  if (length(genes) > 1) {
+    plt <- plt + facet_wrap(~Gene)
+  }
+  return(plt)
+}
+
+
+# - Correlation plot ---------------------------------------------------------
