@@ -131,4 +131,53 @@ proportion_plot <- function(object, genes, clusters = NULL) {
 }
 
 
+# - UMAP plot ----------------------------------------------------------------
+umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL, 
+                      legend = FALSE, cluster_label = FALSE) {
+  # pull UMAP data
+  umap <- data.frame(
+    UMAP1 = object@dr$umap@cell.embeddings[, 1],
+    UMAP2 = object@dr$umap@cell.embeddings[, 2]
+  )
+  
+  if (is.null(clusters)) {
+    clusters <- sort(unique(object@ident))
+  } else {
+    cluster_bool <- clusters %in% object@ident
+    clusters <- clusters[cluster_bool]
+    umap <- umap[cluster_bool]
+  }
+  
+  pull_data <- function(genes) {
+    if (length(genes) == 1) {
+      df <- object@data[genes, ] %>% as.data.frame() %>% set_names(genes)
+    } else {
+      df <- object@data[genes, ] %>% as.matrix() %>% t() %>% as.data.frame()
+    }
+    return(df)
+  }
+  
+  results <- pull_data(genes) %>%
+    bind_cols(., umap) %>%
+    gather(-starts_with("UMAP"), key = "gene", value = "value")
+  
+  # plot
+  plt <-
+    ggplot(results, aes(x = UMAP1, y = UMAP2)) +
+    geom_point(aes(color = value), show.legend = legend, stroke = 0) +
+    scale_color_gradient(low = "gray90", high = "navyblue") +
+    theme_bw() +
+    theme(panel.grid = element_blank()) +
+    facet_wrap(~gene)
+  if (cluster_label == TRUE) {
+    cluster_center <- bind_cols(umap, data.frame("cluster" = object@ident))
+    cluster_center <- cluster_center %>%
+      group_by(cluster) %>%
+      summarize(UMAP1 = mean(UMAP1), UMAP2 = mean(UMAP2))
+    plt <- plt + geom_text(data = cluster_center, aes(label = cluster))
+  }
+  return(plt)
+}
+
+
 # - Correlation plot ---------------------------------------------------------
