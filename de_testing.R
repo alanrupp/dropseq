@@ -160,6 +160,7 @@ two_keys <- function(object, genes = NULL, clusters = NULL) {
   }
   
   # remove duplicates
+  cat("Generating search grid")
   search_grid <- expand.grid(genes, genes) %>% set_names("gene1", "gene2")
   dedup <- function(grid_df) {
     grid2 <- apply(grid_df, 1, sort) %>% t() %>% 
@@ -197,6 +198,7 @@ two_keys <- function(object, genes = NULL, clusters = NULL) {
   
   results <- map(clusters, ~by_cluster(.x)) %>% bind_rows()
   results <- mutate(results, "Diff" = target - other) %>%
+    filter(Diff > 0) %>%
     group_by(Cluster) %>%
     arrange(desc(Diff))
   return(results)

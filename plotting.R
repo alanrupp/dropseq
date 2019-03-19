@@ -37,7 +37,7 @@ summarize_data <- function(object, genes, clusters = NULL) {
 
 
 # - Heatmap plot --------------------------------------------------------------
-cluster_order <- function(object, cells = NULL, genes = NULL, scale = TRUE,
+order_clusters <- function(object, cells = NULL, genes = NULL, scale = TRUE,
                           col_names = FALSE, row_names = FALSE, 
                           heatmap_legend = FALSE) {
   if (is.null(cells)) {
@@ -96,8 +96,8 @@ cluster_order <- function(object, cells = NULL, genes = NULL, scale = TRUE,
 }
 
 
-
-heatmap_plot <- function(object, cells = NULL, genes = NULL, scale = TRUE,
+heatmap_plot <- function(object, genes = NULL, cells = NULL, scale = TRUE,
+                         cluster_order = NULL,
                          col_names = FALSE, row_names = FALSE, 
                          heatmap_legend = FALSE) {
   
@@ -163,9 +163,9 @@ heatmap_plot <- function(object, cells = NULL, genes = NULL, scale = TRUE,
 }
 
 
-# - Violin with treatment -----------------------------------------------------
-violin_plot <- function(object, clusters = NULL, genes, tx = NULL,
-                        jitter = TRUE) {
+# - Violin plot ---------------------------------------------------------------
+violin_plot <- function(object, genes, tx = NULL, clusters = NULL, 
+                        jitter = TRUE, stacked = FALSE) {
   if (is.null(clusters)) {
     clusters <- sort(unique(object@ident))
   }
@@ -175,53 +175,67 @@ violin_plot <- function(object, clusters = NULL, genes, tx = NULL,
   clusters <- clusters[clusters %in% object@ident]
   
   # function to grab cells by treatment
-  grab_cells <- function(clusters, tx = NULL) {
-    by_cluster <- names(arc@ident)[arc@ident %in% clusters]
-    if (!is.null(tx)) {
-      by_tx <- rownames(object@meta.data)[object@meta.data$treatment %in% tx]
-      by_cluster <- intersect(by_cluster, by_tx)
-    }
-    return(by_cluster)
+  grab_cells <- function(clusters) {
+    names(object@ident)[object@ident %in% clusters]
   }
-  
-  cells1 <- grab_cells(clusters, tx[1])
-  cells2 <- grab_cells(clusters, tx[1])
   
   # grab data using input cells
   if (length(genes) == 1) {
-    df <- object@data[genes, union(cells1, cells2)] %>%
+    df <- object@data[genes, grab_cells(clusters)] %>%
       as.matrix() %>% t() %>% as.data.frame()
     rownames(df) <- genes
   } else {
-    df <- object@data[genes, union(cells1, cells2)] %>%
+    df <- object@data[genes, grab_cells(clusters)] %>%
       as.matrix() %>% as.data.frame()
   }
   
-  # add treatment info
+  # make tidy
   df <- df %>%
     rownames_to_column("gene") %>%
-    gather(-gene, key = "cell", value = "Counts") %>%
-    mutate("Treatment" = case_when(
-      cell %in% cells1 ~ tx1,
-      cell %in% cells2 ~ tx2
-    )) %>%
-    mutate(Treatment = factor(Treatment, levels = c(tx1, tx2)))
+    gather(-gene, key = "cell", value = "Counts")
   
-  # plot
-  plt <- ggplot(df, aes(x = Treatment, y = Counts, fill = Treatment)) +
-    geom_violin(show.legend = FALSE) +
+  # add cluster info
+  cluster_df <- data.frame("cell" = names(object@ident),
+                           "Cluster" = object@ident)
+  df <- left_join(df, cluster_df, by = "cell")
+  
+  # plot ------------
+  # add treatment info
+  if (!is.null(tx)) {
+    tx_df <- data.frame("Treatment" = object@meta.data$treatment) %>%
+      rownames_to_column("cell") %>%
+      filter(Treatment %in% tx)
+    df <- inner_join(df, tx_df, by = "cell") %>%
+      mutate(Treatment = factor(Treatment, levels = tx))
+    plt <- ggplot(df, aes(x = Treatment, y = Counts, fill = Treatment)) +
+      facet_wrap(~Cluster)
+  } else {
+    plt <- ggplot(df, aes(x = Cluster, y = Counts, fill = Cluster))
+  }
+  
+  # generic plot attributes
+  plt <- plt + 
+    geom_violin(show.legend = FALSE, scale = "width") +
     theme_bw() +
     scale_y_continuous(expand = c(0,0)) +
     theme(panel.grid = element_blank())
+  
+  # add jitter
   if (jitter == TRUE) {
-    plt <- plt + geom_jitter(show.legend = FALSE, height = 0)
-  }
-  if (length(genes) > 1) {
-    plt <- plt + facet_wrap(~gene)
+    plt <- plt + geom_jitter(show.legend = FALSE, height = 0, alpha = 0.2)
   }
   
-  plt
+  # facet wrap for multiple genes or multiple genes + treatments
+  if (length(genes) > 1) {
+    if (!is.null(tx)) {
+      plt <- plt + facet_wrap(~gene + Cluster, scales = "free_y")
+    } else {
+      plt <- plt + facet_wrap(~gene, scales = "free_y")
+    }
+  }
+  return(plt)
 }
+
 
 # - Column plot of mean gene expression ---------------------------------------
 column_plot <- function(object, genes, clusters = NULL, 
@@ -242,6 +256,7 @@ column_plot <- function(object, genes, clusters = NULL,
   }
   return(plt)
 }
+
 
 # - Proportion plot -----------------------------------------------------------
 proportion_plot <- function(object, genes, clusters = NULL) {
@@ -321,9 +336,15 @@ umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL,
   return(plt)
 }
 
+
 # - Dot plot ------------------------------------------------------------------
-dot_plot <- function(object, genes, clusters = NULL) {
+dot_plot <- function(object, genes, clusters = NULL, cluster_order = NULL) {
   df <- summarize_data(object, genes, clusters)
+  
+  if (!is.null(cluster_order)) {
+    df <- df %>%
+      mutate(cluster = factor(cluster, levels = cluster_order))
+  }
   
   # plot
   plt <- 
@@ -405,13 +426,12 @@ coexpression_plot <- function(object, genes, clusters = NULL, title = TRUE) {
   plt <- ggplot(df, aes(x = Var1, y = "Coexpression", fill = Proportion)) +
     geom_tile() +
     scale_fill_viridis_c() + 
-    labs(x = "Cluster", y = element_blank()) +
+    labs(x = "Cluster", y = paste(genes[1], "+", genes[2])) +
     scale_x_discrete(expand = c(0, 0)) +
     scale_y_discrete(expand = c(0, 0)) +
     theme_bw() +
     theme(axis.text.y = element_blank(),
           axis.ticks.y = element_blank())
-  
   if (title == TRUE) {
     plt <- plt + ggtitle(paste("Coexpression of", genes[1], "and", genes[2]))
   }

@@ -33,6 +33,12 @@ dedup_genes <- function(mtx) {
   return(mtx2)
 }
 
+# - Turn counts into TPM ------------------------------------------------------
+make_tpm <- function(mtx) {
+  mtx <- apply(mtx, 2, function(x) log2(x / sum(x) * 10^6 + 1))
+  mtx <- Matrix(mtx, sparse = TRUE)
+  return(mtx)
+}
 
 # - Wipe clean metadata slot --------------------------------------------------
 wipe_metadata <- function(object) {
