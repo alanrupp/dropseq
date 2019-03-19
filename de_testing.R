@@ -1,7 +1,7 @@
 library(tidyverse)
 library(Seurat)
 
-# find high expressing genes
+# find highly expressed genes -----------------------------------------------
 find_expressed <- function(object, min_cells = 10, min_counts = 1) {
   calc <- rowSums(object@raw.data >= min_counts) >= min_cells
   calc <- calc[calc == TRUE]
@@ -143,4 +143,61 @@ treatment_violin <- function(object, cluster, genes, tx1, tx2,
   }
   
   plt
+}
+
+# - Finding coexpression of 2 genes -------------------------------------------
+two_keys <- function(object, genes = NULL, clusters = NULL) {
+  if (is.null(genes)) {
+    genes <- rownames(object@data)
+  } else {
+    genes <- genes[genes %in% rownames(object@data)]
+  }
+  
+  if (is.null(clusters)) {
+    clusters <- unique(sort(object@ident))
+  } else {
+    clusters <- clusters[clusters %in% object@ident]
+  }
+  
+  # remove duplicates
+  search_grid <- expand.grid(genes, genes) %>% set_names("gene1", "gene2")
+  dedup <- function(grid_df) {
+    grid2 <- apply(grid_df, 1, sort) %>% t() %>% 
+      as.data.frame() %>% mutate('combined' = paste(V1, V2))
+    grid_df <- grid_df[!duplicated(grid2$combined), ]
+    return(grid_df)
+  }
+  search_grid <- dedup(search_grid)
+  search_grid <- search_grid[search_grid$gene1 != search_grid$gene2, ]
+  
+  # find coexpression rate by clusters vs. other clusters
+  coexpression <- function(cluster, genes) {
+    tbl <- table(object@ident, 
+                 object@data[genes[1], ] > 0 & object@data[genes[2], ] > 0)
+    tbl <- as.data.frame(tbl)
+    tbl <- tbl %>% 
+      group_by(Var1) %>%
+      summarize("Prop" = sum(Freq[Var2 == TRUE]) / sum(Freq)) %>%
+      mutate("Group" = ifelse(Var1 == cluster, "target", "other")) %>%
+      select(Group, Prop) %>%
+      group_by(Group) %>%
+      summarize(Prop = max(Prop)) %>%
+      spread(key = "Group", value = "Prop") %>%
+      mutate("Gene1" = genes[1], "Gene2" = genes[2]) %>%
+      mutate("Cluster" = cluster)
+    return(tbl)
+  }
+  
+  # apply by cluster then put together later
+  by_cluster <- function(cluster) {
+    cat(paste("Calculating cluster", cluster, "\n"))
+    result <- apply(search_grid, 1, function(x) coexpression(cluster, c(x[1], x[2])))
+    return(bind_rows(result))
+  }
+  
+  results <- map(clusters, ~by_cluster(.x)) %>% bind_rows()
+  results <- mutate(results, "Diff" = target - other) %>%
+    group_by(Cluster) %>%
+    arrange(desc(Diff))
+  return(results)
 }
