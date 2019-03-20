@@ -222,7 +222,8 @@ violin_plot <- function(object, genes, tx = NULL, clusters = NULL,
   
   # add jitter
   if (jitter == TRUE) {
-    plt <- plt + geom_jitter(show.legend = FALSE, height = 0, alpha = 0.2)
+    plt <- plt + geom_jitter(show.legend = FALSE, height = 0, alpha = 0.2,
+                             stroke = 0)
   }
   
   # facet wrap for multiple genes or multiple genes + treatments
@@ -295,7 +296,7 @@ umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL,
   umap <- data.frame(
     UMAP1 = object@dr$umap@cell.embeddings[, 1],
     UMAP2 = object@dr$umap@cell.embeddings[, 2]
-  )
+  ) %>% rownames_to_column("barcode")
   
   if (is.null(clusters)) {
     clusters <- sort(unique(object@ident))
@@ -315,7 +316,9 @@ umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL,
   }
   
   results <- pull_data(genes) %>%
-    bind_cols(., umap) %>%
+    rownames_to_column("barcode") %>%
+    left_join(., umap, by = "barcode") %>%
+    select(-barcode) %>%
     gather(-starts_with("UMAP"), key = "gene", value = "value")
   
   # plot
@@ -327,7 +330,10 @@ umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL,
     theme(panel.grid = element_blank()) +
     facet_wrap(~gene, ncol = ncol)
   if (cluster_label == TRUE) {
-    cluster_center <- bind_cols(umap, data.frame("cluster" = object@ident))
+    cluster_center <- 
+      left_join(umap, data.frame("barcode" = names(object@ident),
+                                 "cluster" = object@ident), by = "barcode") %>%
+      select(-barcode)
     cluster_center <- cluster_center %>%
       group_by(cluster) %>%
       summarize(UMAP1 = mean(UMAP1), UMAP2 = mean(UMAP2))
