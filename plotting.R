@@ -165,7 +165,8 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scale = TRUE,
 
 # - Violin plot ---------------------------------------------------------------
 violin_plot <- function(object, genes, tx = NULL, clusters = NULL, 
-                        jitter = TRUE, stacked = FALSE) {
+                        jitter = TRUE, stacked = FALSE, order_genes = FALSE,
+                        ncol = NULL) {
   if (is.null(clusters)) {
     clusters <- sort(unique(object@ident))
   }
@@ -193,6 +194,10 @@ violin_plot <- function(object, genes, tx = NULL, clusters = NULL,
   df <- df %>%
     rownames_to_column("gene") %>%
     gather(-gene, key = "cell", value = "Counts")
+  
+  if (order_genes == TRUE) {
+    df <- mutate(df, gene = factor(gene, levels = genes))
+  }
   
   # add cluster info
   cluster_df <- data.frame("cell" = names(object@ident),
@@ -263,6 +268,8 @@ column_plot <- function(object, genes, clusters = NULL,
 proportion_plot <- function(object, genes, clusters = NULL) {
   if (is.null(clusters)) {
     clusters <- sort(unique(object@ident))
+  } else {
+    clusters <- clusters[clusters %in% object@ident]
   }
   
   get_table <- function(gene) {
@@ -272,6 +279,9 @@ proportion_plot <- function(object, genes, clusters = NULL) {
   }
   
   df <- map(genes, ~get_table(.x)) %>% bind_rows()
+  
+  # keep only specified clusters
+  df <- filter(df, Var1 %in% clusters)
   
   plt <-
     ggplot(df, aes(x = Var1, y = Freq, fill = Var2)) + 
@@ -291,7 +301,7 @@ proportion_plot <- function(object, genes, clusters = NULL) {
 # - UMAP plot ----------------------------------------------------------------
 umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL, 
                       legend = FALSE, cluster_label = FALSE,
-                      ncol = NULL) {
+                      ncol = NULL, xlim = NULL, ylim = NULL) {
   # pull UMAP data
   umap <- data.frame(
     UMAP1 = object@dr$umap@cell.embeddings[, 1],
@@ -301,9 +311,9 @@ umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL,
   if (is.null(clusters)) {
     clusters <- sort(unique(object@ident))
   } else {
-    cluster_bool <- clusters %in% object@ident
+    cluster_bool <- object@ident %in% clusters
     clusters <- clusters[cluster_bool]
-    umap <- umap[cluster_bool]
+    umap <- umap[cluster_bool, ]
   }
   
   pull_data <- function(genes) {
@@ -338,6 +348,12 @@ umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL,
       group_by(cluster) %>%
       summarize(UMAP1 = mean(UMAP1), UMAP2 = mean(UMAP2))
     plt <- plt + geom_text(data = cluster_center, aes(label = cluster))
+  }
+  if (!is.null(xlim)) {
+    plt <- plt + xlim(xlim)
+  }
+  if (!is.null(ylim)) {
+    plt <- plt + ylim(ylim)
   }
   return(plt)
 }
