@@ -6,6 +6,7 @@ summarize_data <- function(object, genes, clusters = NULL) {
     clusters <- clusters[clusters %in% object@ident]
   }
   
+  # keep valid genes
   genes <- genes[genes %in% rownames(object@data)]
   
   # grab data
@@ -30,7 +31,7 @@ summarize_data <- function(object, genes, clusters = NULL) {
   # summarize
   df <- df %>%
     group_by(gene, cluster) %>%
-    summarize(counts = mean(counts))
+    summarize(counts = mean(counts), prop = sum(counts > 0)/n())
   
   return(df)
 }
@@ -298,6 +299,76 @@ proportion_plot <- function(object, genes, clusters = NULL) {
 }
 
 
+# - Flamemap plot ------------------------------------------------------------
+flamemap <- function(object, genes, cells = NULL, n_bars = 100,
+                     order_genes = FALSE, cluster_labels = TRUE) {
+  genes <- genes[genes %in% rownames(object@data)]
+  if (is.null(cells)) {
+    cells <- colnames(object@data)
+  } else {
+    cells <- cells[cells %in% colnames(object@data)]
+  }
+  
+  if (length(genes) == 0) {
+    print("Invalid gene input")
+    exit()
+  }
+  
+  # grab cluster information and arrange by cluster name
+  clusters <- data.frame(cell = names(object@ident), cluster = object@ident)
+  clusters <- arrange(clusters, cluster, cell)
+  clusters <- filter(clusters, cell %in% cells)
+  
+  # grab cluster info for plotting ticks on x axis
+  scale_factor <- nrow(clusters)/n_bars
+  cluster_stats <- clusters %>% mutate("pos" = seq(n())) %>% 
+    group_by(cluster) %>% 
+    summarize(max = max(pos), mid = mean(pos)) %>%
+    mutate_if(is.numeric, ~ .x / scale_factor)
+    
+  # grab relevant data
+  mtx <- object@data[genes, filter(clusters, cell %in% cells)$cell]
+  
+  # reshape
+  df <- mtx %>%
+    as.matrix() %>%
+    as.data.frame() %>%
+    rownames_to_column("gene") %>%
+    gather(-gene, key = "cell", value = "counts") %>%
+    mutate(cell = factor(cell, levels = filter(clusters, cell %in% cells)$cell)) %>%
+    group_by(gene) %>%
+    mutate("bar" = ntile(cell, n_bars)) %>%
+    group_by(gene, bar) %>%
+    arrange(desc(counts)) %>%
+    ungroup()
+  
+  # order genes by user-defined order
+  if (order_genes == TRUE) {
+    df <- df %>%
+      mutate(gene = factor(gene, levels = genes))
+  }
+  
+  # plot
+  plt <-
+    ggplot(df, aes(x = bar, y = counts, fill = counts)) +
+    geom_col(show.legend = FALSE) +
+    geom_hline(aes(yintercept = 0)) +
+    geom_text(data = cluster_stats,
+              aes(x = mid, y = -2, label = cluster), inherit.aes = FALSE) +
+    scale_fill_gradient(low = "yellow", high = "red") +
+    scale_x_continuous(expand = c(0, 0), breaks = c(1, cluster_stats$max+0.5)) +
+    scale_y_continuous(expand = c(0, 0), limits = c(-4, NA)) +
+    labs(y = element_blank(), x = element_blank()) +
+    facet_wrap(~gene) +
+    theme_bw() +
+    theme(panel.grid = element_blank(), 
+          axis.text.x = element_blank(),
+          axis.line.x = element_blank())
+  
+  return(plt)
+}
+
+
 # - UMAP plot ----------------------------------------------------------------
 umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL, 
                       legend = FALSE, cluster_label = FALSE,
@@ -370,10 +441,12 @@ dot_plot <- function(object, genes, clusters = NULL, cluster_order = NULL) {
   
   # plot
   plt <- 
-    ggplot(df, aes(x = gene, y = fct_rev(cluster), size = counts)) +
-    geom_point(show.legend = FALSE, color = "steelblue") +
+    ggplot(df, aes(x = gene, y = fct_rev(cluster), size = counts,
+                   color = prop)) +
+    geom_point(show.legend = FALSE) +
     scale_x_discrete(position = "top") +
     scale_radius(limits = c(0.01, NA)) +
+    scale_fill_gradient(low = "red", high = "blue") +
     theme_void() +
     theme(axis.text.x = element_text(color = "black", angle = 89, vjust = 1,
                                      hjust = 1))
