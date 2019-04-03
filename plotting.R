@@ -28,10 +28,14 @@ summarize_data <- function(object, genes, clusters = NULL) {
   df <- left_join(df, data.frame("barcode" = names(object@ident),
                                  "cluster" = object@ident), by = "barcode")
   
+  # filter by selected clusters
+  df <- filter(df, cluster %in% clusters)
+  
   # summarize
   df <- df %>%
     group_by(gene, cluster) %>%
-    summarize(counts = mean(counts), prop = sum(counts > 0)/n())
+    summarize(avg = mean(counts), prop = sum(counts > 0)/n()) %>%
+    ungroup()
   
   return(df)
 }
@@ -431,25 +435,42 @@ umap_plot <- function(object, genes = NULL, cells = NULL, clusters = NULL,
 
 
 # - Dot plot ------------------------------------------------------------------
-dot_plot <- function(object, genes, clusters = NULL, cluster_order = NULL) {
+dot_plot <- function(object, genes, clusters = NULL, 
+                     gene_order = FALSE,
+                     cluster_order = FALSE,
+                     cluster_labels = FALSE) {
+  
+  # get summary data
   df <- summarize_data(object, genes, clusters)
   
-  if (!is.null(cluster_order)) {
+  if (cluster_order == TRUE) {
     df <- df %>%
-      mutate(cluster = factor(cluster, levels = cluster_order))
+      mutate(cluster = factor(cluster, levels = clusters))
+  }
+  
+  if (gene_order == TRUE) {
+    df <- df %>%
+      mutate(gene = factor(gene, levels = genes))
   }
   
   # plot
   plt <- 
-    ggplot(df, aes(x = gene, y = fct_rev(cluster), size = counts,
+    ggplot(df, aes(x = gene, y = fct_rev(cluster), size = avg,
                    color = prop)) +
     geom_point(show.legend = FALSE) +
     scale_x_discrete(position = "top") +
     scale_radius(limits = c(0.01, NA)) +
-    scale_fill_gradient(low = "red", high = "blue") +
-    theme_void() +
-    theme(axis.text.x = element_text(color = "black", angle = 89, vjust = 1,
-                                     hjust = 1))
+    scale_color_gradient(low = "blue", high = "red") +
+    theme_void()
+  
+  if (cluster_labels == TRUE) {
+    plt <- plt + theme(axis.text.x = element_text(color = "black", angle = 89, 
+                                                  vjust = 0.5, hjust = 0.5),
+                       axis.text.y = element_text())
+  } else {
+    plt <- plt + theme(axis.text.x = element_text(color = "black", angle = 89, vjust = 1,
+                                     hjust = ))
+  }
   
   return(plt)
 }
