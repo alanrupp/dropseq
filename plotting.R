@@ -305,7 +305,8 @@ proportion_plot <- function(object, genes, clusters = NULL) {
 
 # - Flamemap plot ------------------------------------------------------------
 flamemap <- function(object, genes, cells = NULL, n_bars = 100,
-                     order_genes = FALSE, cluster_labels = TRUE) {
+                     order_genes = FALSE, cluster_labels = TRUE,
+                     icicle = FALSE) {
   genes <- genes[genes %in% rownames(object@data)]
   if (is.null(cells)) {
     cells <- colnames(object@data)
@@ -355,22 +356,35 @@ flamemap <- function(object, genes, cells = NULL, n_bars = 100,
       mutate(gene = factor(gene, levels = genes))
   }
   
+  if (icicle == TRUE) {
+    df <- mutate(df, counts = -counts, height = -height)
+  }
+  
   # plot
   plt <-
     ggplot(df, aes(x = bar, y = height, fill = counts)) +
     geom_col(show.legend = FALSE) +
     geom_hline(aes(yintercept = 0)) +
-    geom_text(data = cluster_stats,
-              aes(x = mid, y = -0.05, label = cluster), inherit.aes = FALSE) +
-    scale_fill_gradient(low = "yellow", high = "red") +
     scale_x_continuous(expand = c(0, 0), breaks = c(1, cluster_stats$max+0.5)) +
-    scale_y_continuous(expand = c(0, 0), limits = c(-0.1, NA)) +
     labs(y = element_blank(), x = element_blank()) +
     facet_wrap(~gene) +
     theme_bw() +
     theme(panel.grid = element_blank(), 
           axis.text.x = element_blank(),
           axis.line.x = element_blank())
+  
+  if (icicle == TRUE) {
+    plt <- plt + scale_fill_gradient(low = "royalblue", high = "aquamarine") +
+      geom_text(data = cluster_stats,
+                aes(x = mid, y = 0.015, label = cluster), inherit.aes = FALSE) +
+      scale_y_continuous(expand = c(0, 0), limits = c(-1, 0.03),
+                         labels = seq(1, 0, by = -0.25))
+  } else {
+    plt <- plt + scale_fill_gradient(low = "yellow", high = "red") +
+      geom_text(data = cluster_stats,
+                aes(x = mid, y = -0.015, label = cluster), inherit.aes = FALSE)  +
+      scale_y_continuous(expand = c(0, 0), limits = c(-0.03, 1))
+  }
   
   return(plt)
 }
