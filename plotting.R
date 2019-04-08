@@ -334,7 +334,8 @@ flamemap <- function(object, genes, cells = NULL, n_bars = 100,
   mtx <- object@data[genes, filter(clusters, cell %in% cells)$cell]
   
   # reshape
-  df <- mtx %>%
+  df <- 
+    mtx %>%
     as.matrix() %>%
     as.data.frame() %>%
     rownames_to_column("gene") %>%
@@ -344,7 +345,9 @@ flamemap <- function(object, genes, cells = NULL, n_bars = 100,
     mutate("bar" = ntile(cell, n_bars)) %>%
     group_by(gene, bar) %>%
     arrange(desc(counts)) %>%
-    ungroup()
+    ungroup() %>%
+    group_by(gene, bar) %>%
+    mutate("height" = as.numeric(counts > 1) / n())
   
   # order genes by user-defined order
   if (order_genes == TRUE) {
@@ -354,14 +357,14 @@ flamemap <- function(object, genes, cells = NULL, n_bars = 100,
   
   # plot
   plt <-
-    ggplot(df, aes(x = bar, y = counts, fill = counts)) +
+    ggplot(df, aes(x = bar, y = height, fill = counts)) +
     geom_col(show.legend = FALSE) +
     geom_hline(aes(yintercept = 0)) +
     geom_text(data = cluster_stats,
-              aes(x = mid, y = -2, label = cluster), inherit.aes = FALSE) +
+              aes(x = mid, y = -0.05, label = cluster), inherit.aes = FALSE) +
     scale_fill_gradient(low = "yellow", high = "red") +
     scale_x_continuous(expand = c(0, 0), breaks = c(1, cluster_stats$max+0.5)) +
-    scale_y_continuous(expand = c(0, 0), limits = c(-4, NA)) +
+    scale_y_continuous(expand = c(0, 0), limits = c(-0.1, NA)) +
     labs(y = element_blank(), x = element_blank()) +
     facet_wrap(~gene) +
     theme_bw() +
