@@ -118,10 +118,15 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scale = TRUE,
   
   if (scale == TRUE) {
     matrix <- object@scale.data[genes, ]
-    color_pal <- RColorBrewer::brewer.pal("div", "RdYlBu")
+    # make red --> white --> blue color palette
+    endcolors <- c("#e83c3c", "white", "#72bcd4")
+    color_pal <- c(colorRampPalette(c(endcolors[1], endcolors[2]))(50), 
+                   colorRampPalette(c(endcolors[2], endcolors[3]))(51)[-1])
   } else {
     matrix <- object@data[genes, ]
-    color_pal <- RColorBrewer::brewer.pal("seq", "YlGnBu")
+    # make white --> blue color palette
+    endcolors <- c("white", "#72bcd4")
+    color_pal <- c(colorRampPalette(c(endcolors[1], endcolors[2]))(100)
   }
   
   # functions to grab cells and calculate mean expression
