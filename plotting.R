@@ -119,14 +119,14 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scale = TRUE,
   if (scale == TRUE) {
     matrix <- object@scale.data[genes, ]
     # make red --> white --> blue color palette
-    endcolors <- c("#e83c3c", "white", "#72bcd4")
+    endcolors <- c("firebrick3", "white", "dodgerblue3")
     color_pal <- c(colorRampPalette(c(endcolors[1], endcolors[2]))(50), 
                    colorRampPalette(c(endcolors[2], endcolors[3]))(51)[-1])
   } else {
     matrix <- object@data[genes, ]
     # make white --> blue color palette
-    endcolors <- c("white", "#72bcd4")
-    color_pal <- c(colorRampPalette(c(endcolors[1], endcolors[2]))(100)
+    endcolors <- c("white", "dodgerblue3")
+    color_pal <- colorRampPalette(c(endcolors[1], endcolors[2]))(100)
   }
   
   # functions to grab cells and calculate mean expression
