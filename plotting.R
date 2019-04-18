@@ -108,41 +108,44 @@ heatmap_plot <- function(object, genes = NULL, cells = NULL, scale = TRUE,
   
   if (is.null(cells)) {
     cells <- colnames(object@data)
+    idents <- unique(object@ident)
+  } else {
+    cells <- cells[cells %in% colnames(object@data)]
+    idents <- unique(object@ident[names(object@ident) %in% cells])
   }
   if (is.null(genes)) {
     genes <- rownames(object@data)
   } 
   
-  cells <- cells[cells %in% colnames(object@data)]
+  
   genes <- genes[genes %in% rownames(object@data)]
   
   if (scale == TRUE) {
-    matrix <- object@scale.data[genes, ]
+    matrix <- object@scale.data[genes, cells]
     # make red --> white --> blue color palette
     endcolors <- c("firebrick3", "white", "dodgerblue3")
     color_pal <- c(colorRampPalette(c(endcolors[1], endcolors[2]))(50), 
                    colorRampPalette(c(endcolors[2], endcolors[3]))(51)[-1])
   } else {
-    matrix <- object@data[genes, ]
+    matrix <- object@data[genes, cells]
     # make white --> blue color palette
     endcolors <- c("white", "dodgerblue3")
     color_pal <- colorRampPalette(c(endcolors[1], endcolors[2]))(100)
   }
   
   # functions to grab cells and calculate mean expression
-  mean_expression <- function(matrix, cells) {
-    rowMeans(matrix[, cells])
+  mean_expression <- function(matrix, cell_subset) {
+    rowMeans(matrix[, cell_subset])
   }
-  cells_use <- function(object, ident) {
+  cells_use <- function(ident) {
     names(object@ident)[object@ident == ident]
   }
   
   # calculate mean expression by cluster
   mean_values <-
-    map(unique(object@ident),
-        ~mean_expression(matrix, cells = cells_use(object, .x))) %>%
+    map(idents, ~mean_expression(matrix, cells_use(.x))) %>%
     as.data.frame() %>%
-    set_names(unique(object@ident)) %>%
+    set_names(idents) %>%
     t()
   
   # auto clip high and low to center at 0
@@ -331,7 +334,9 @@ flamemap <- function(object, genes, cells = NULL, n_bars = 100,
   
   # grab cluster info for plotting ticks on x axis
   scale_factor <- nrow(clusters)/n_bars
-  cluster_stats <- clusters %>% mutate("pos" = seq(n())) %>% 
+  cluster_stats <- 
+    clusters %>% 
+    mutate("pos" = seq(n())) %>% 
     group_by(cluster) %>% 
     summarize(max = max(pos), mid = mean(pos)) %>%
     mutate_if(is.numeric, ~ .x / scale_factor)
