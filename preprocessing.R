@@ -1,5 +1,19 @@
 # Functions for preprocessing Seurat objects
 
+# - Read 10X ------------------------------------------------------------------
+read_10x <- function(directory, gene_id = FALSE) {
+  matrix <- readMM(paste0(directory, "/matrix.mtx.gz"))
+  features <- read_tsv(paste0(directory, "/features.tsv.gz"), col_names = FALSE)
+  barcodes <- read_tsv(paste0(directory, "/barcodes.tsv.gz"), col_names = FALSE)
+  if (gene_id == TRUE) {
+    rownames(matrix) <- features$X1
+  } else {
+    rownames(matrix) <- features$X2
+  }
+  colnames(matrix) <- barcodes$X1
+  return(matrix)
+}
+
 # - Fix duplicated cell names -------------------------------------------------
 dedup_barcodes <- function(mtx) {
   if (sum(duplicated(colnames(mtx))) > 0) {
@@ -28,8 +42,8 @@ dedup_genes <- function(mtx) {
     .$position
   
   # keep only positions left in genes df
-  cat(paste(length(genes) - length(genes_to_keep), "genes removed"))
-  mtx2 <- mtx[genes, ]
+  cat(paste(nrow(genes) - length(genes_to_keep), "genes removed"))
+  mtx2 <- mtx[genes_to_keep, ]
   return(mtx2)
 }
 
